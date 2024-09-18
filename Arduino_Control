@@ -1,0 +1,146 @@
+#include <Wire.h>
+#include <RTClib.h>
+#include <DallasTemperature.h>
+#include <OneWire.h>
+#include <SPI.h>
+#include <SD.h>
+
+// Inisialisasi RTC
+RTC_DS3231 rtc;
+
+// Pin untuk sensor dan relay
+const int relayInPump = 22;
+const int relayOutPump = 23;
+const int trigPin = 24;
+const int echoPin = 25;
+const int relayNutrientA = 26;
+const int relayNutrientB = 27;
+const int tempSensorPin = 28;
+const int relayMixer = 29;
+const int waterLevelPin = A0;
+const int phSensorPin = A1;
+const int tdsSensorPin = A2;
+
+// Inisialisasi sensor suhu
+OneWire oneWire(tempSensorPin);
+DallasTemperature sensors(&oneWire);
+
+// Pin untuk SD Card
+const int chipSelect = 4;
+
+// Variabel konfigurasi
+float maxWaterLevel, minWaterLevel, maxTemp, minTemp, maxPH, minPH, maxTDS, minTDS;
+
+void setup() {
+  Wire.begin();
+  rtc.begin();
+  sensors.begin();
+  Serial.begin(9600);
+
+  // Inisialisasi SD Card
+  if (!SD.begin(chipSelect)) {
+    Serial.println("Initialization failed!");
+    return;
+  }
+  Serial.println("Initialization done.");
+
+  // Membaca konfigurasi dari SD Card
+  readConfig();
+
+  // Inisialisasi pin relay
+  pinMode(relayInPump, OUTPUT);
+  pinMode(relayOutPump, OUTPUT);
+  pinMode(relayNutrientA, OUTPUT);
+  pinMode(relayNutrientB, OUTPUT);
+  pinMode(relayMixer, OUTPUT);
+
+  // Inisialisasi pin sensor
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(waterLevelPin, INPUT);
+  pinMode(phSensorPin, INPUT);
+  pinMode(tdsSensorPin, INPUT);
+}
+
+void loop() {
+  // Membaca waktu dari RTC
+  DateTime now = rtc.now();
+  Serial.print("Time: ");
+  Serial.print(now.hour());
+  Serial.print(':');
+  Serial.print(now.minute());
+  Serial.print(':');
+  Serial.print(now.second());
+  Serial.println();
+
+  // Membaca sensor ultrasonic
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH);
+  int distance = duration * 0.034 / 2;
+  Serial.print("Water Level (Ultrasonic): ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  // Membaca water level sensor
+  int waterLevel = analogRead(waterLevelPin);
+  Serial.print("Water Level (Analog): ");
+  Serial.println(waterLevel);
+
+  // Membaca sensor pH
+  int phValue = analogRead(phSensorPin);
+  Serial.print("pH Value: ");
+  Serial.println(phValue);
+
+  // Membaca sensor TDS/EC
+  int tdsValue = analogRead(tdsSensorPin);
+  Serial.print("TDS/EC Value: ");
+  Serial.println(tdsValue);
+
+  // Membaca sensor suhu
+  sensors.requestTemperatures();
+  float temperature = sensors.getTempCByIndex(0);
+  Serial.print("Water Temperature: ");
+  Serial.print(temperature);
+  Serial.println(" °C");
+
+  // Mengirim data ke NodeMCU ESP8266 (alamat 8)
+  Wire.beginTransmission(8);
+  Wire.write(distance); // Mengirim data level air
+  Wire.write(waterLevel); // Mengirim data level air analog
+  Wire.write(phValue); // Mengirim data pH
+  Wire.write(tdsValue); // Mengirim data TDS/EC
+  Wire.write((int)temperature); // Mengirim data suhu
+  Wire.endTransmission();
+
+  // Mengirim data ke Arduino UNO (alamat 9)
+  Wire.beginTransmission(9);
+  Wire.write(distance); // Mengirim data level air
+  Wire.write(waterLevel); // Mengirim data level air analog
+  Wire.write(phValue); // Mengirim data pH
+  Wire.write(tdsValue); // Mengirim data TDS/EC
+  Wire.write((int)temperature); // Mengirim data suhu
+  Wire.endTransmission();
+
+  delay(1000); // Update setiap detik
+}
+
+void readConfig() {
+  File configFile = SD.open("config.txt");
+  if (configFile) {
+    maxWaterLevel = configFile.parseFloat();
+    minWaterLevel = configFile.parseFloat();
+    maxTemp = configFile.parseFloat();
+    minTemp = configFile.parseFloat();
+    maxPH = configFile.parseFloat();
+    minPH = configFile.parseFloat();
+    maxTDS = configFile.parseFloat();
+    minTDS = configFile.parseFloat();
+    configFile.close();
+  } else {
+    Serial.println("Error opening config.txt");
+  }
+}
