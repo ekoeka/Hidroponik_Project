@@ -1,0 +1,77 @@
+#include <Wire.h>
+#include <SoftwareWire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SPI.h>
+#include <SD.h>
+
+// Inisialisasi SoftwareWire pada pin 8 (SDA) dan 9 (SCL)
+SoftwareWire myWire(8, 9);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Alamat I2C LCD bisa berbeda, sesuaikan dengan modul Anda
+
+// Pin untuk SD Card
+const int chipSelect = 4;
+
+void setup() {
+  myWire.begin(); // Inisialisasi I2C pada pin 8 dan 9
+  lcd.begin();
+  lcd.backlight();
+
+  Wire.begin(9); // Inisialisasi I2C sebagai slave dengan alamat 9
+  Wire.onReceive(receiveEvent);
+
+  // Inisialisasi SD Card
+  if (!SD.begin(chipSelect)) {
+    Serial.println("Initialization failed!");
+    return;
+  }
+  Serial.println("Initialization done.");
+}
+
+void loop() {
+  // Tidak ada kode di loop
+}
+
+void receiveEvent(int howMany) {
+  int distance = Wire.read();
+  int waterLevel = Wire.read();
+  int phValue = Wire.read();
+  int tdsValue = Wire.read();
+  int temperature = Wire.read();
+
+  // Tampilkan data pada LCD
+  lcd.setCursor(0, 0);
+  lcd.print("Dist: ");
+  lcd.print(distance);
+  lcd.print(" cm");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Temp: ");
+  lcd.print(temperature);
+  lcd.print(" C");
+
+  delay(1000); // Update setiap detik
+}
+
+void writeConfig(float maxWaterLevel, float minWaterLevel, float maxTemp, float minTemp, float maxPH, float minPH, float maxTDS, float minTDS) {
+  File configFile = SD.open("config.txt", FILE_WRITE);
+  if (configFile) {
+    configFile.print(maxWaterLevel);
+    configFile.print(" ");
+    configFile.print(minWaterLevel);
+    configFile.print(" ");
+    configFile.print(maxTemp);
+    configFile.print(" ");
+    configFile.print(minTemp);
+    configFile.print(" ");
+    configFile.print(maxPH);
+    configFile.print(" ");
+    configFile.print(minPH);
+    configFile.print(" ");
+    configFile.print(maxTDS);
+    configFile.print(" ");
+    configFile.print(minTDS);
+    configFile.close();
+  } else {
+    Serial.println("Error opening config.txt");
+  }
+}
