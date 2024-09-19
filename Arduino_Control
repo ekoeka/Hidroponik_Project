@@ -8,25 +8,32 @@
 // Inisialisasi RTC
 RTC_DS3231 rtc;
 
-// Pin untuk sensor dan relay
-const int relayInPump = 22;
-const int relayOutPump = 23;
-const int trigPin = 24;
-const int echoPin = 25;
-const int relayNutrientA = 26;
-const int relayNutrientB = 27;
-const int tempSensorPin = 28;
-const int relayMixer = 29;
-const int waterLevelPin = A0;
-const int phSensorPin = A1;
-const int tdsSensorPin = A2;
+//Penempatan pin
+//Arduino Atmega2560
+#if defined (AVr)
+  // Pin untuk sensor dan relay
+  const int relayInPump = 22;
+  const int relayOutPump = 23;
+  const int relayMixer = 29;
+  const int relayNutrientA = 26;
+  const int relayNutrientB = 27;
+  // Pin ultrasonic
+  const int trigPin = 24;
+  const int echoPin = 25;
+  // Pin Temperatur air
+  const int tempSensorPin = 28;
+  // Pin Water Level
+  const int waterLevelPin = A0;
+  // Pin Ph sensor
+  const int phSensorPin = A1;
+  // Pin Tds
+  const int tdsSensorPin = A2;
+
+#elif defined (Uno)
 
 // Inisialisasi sensor suhu
 OneWire oneWire(tempSensorPin);
 DallasTemperature sensors(&oneWire);
-
-// Pin untuk SD Card
-const int chipSelect = 4;
 
 // Variabel konfigurasi
 float maxWaterLevel, minWaterLevel, maxTemp, minTemp, maxPH, minPH, maxTDS, minTDS;
@@ -34,18 +41,9 @@ float maxWaterLevel, minWaterLevel, maxTemp, minTemp, maxPH, minPH, maxTDS, minT
 void setup() {
   Wire.begin();
   rtc.begin();
+//sensor temp air
   sensors.begin();
   Serial.begin(9600);
-
-  // Inisialisasi SD Card
-  if (!SD.begin(chipSelect)) {
-    Serial.println("Initialization failed!");
-    return;
-  }
-  Serial.println("Initialization done.");
-
-  // Membaca konfigurasi dari SD Card
-  readConfig();
 
   // Inisialisasi pin relay
   pinMode(relayInPump, OUTPUT);
@@ -63,7 +61,7 @@ void setup() {
 }
 
 void loop() {
-  // Membaca waktu dari RTC
+  /*// Membaca waktu dari RTC
   DateTime now = rtc.now();
   Serial.print("Time: ");
   Serial.print(now.hour());
@@ -72,7 +70,8 @@ void loop() {
   Serial.print(':');
   Serial.print(now.second());
   Serial.println();
-
+  */
+  
   // Membaca sensor ultrasonic
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
@@ -126,21 +125,4 @@ void loop() {
   Wire.endTransmission();
 
   delay(1000); // Update setiap detik
-}
-
-void readConfig() {
-  File configFile = SD.open("config.txt");
-  if (configFile) {
-    maxWaterLevel = configFile.parseFloat();
-    minWaterLevel = configFile.parseFloat();
-    maxTemp = configFile.parseFloat();
-    minTemp = configFile.parseFloat();
-    maxPH = configFile.parseFloat();
-    minPH = configFile.parseFloat();
-    maxTDS = configFile.parseFloat();
-    minTDS = configFile.parseFloat();
-    configFile.close();
-  } else {
-    Serial.println("Error opening config.txt");
-  }
 }
