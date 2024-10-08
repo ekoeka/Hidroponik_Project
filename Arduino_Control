@@ -2,8 +2,6 @@
 #include <RTClib.h>
 #include <DallasTemperature.h>
 #include <OneWire.h>
-#include <SPI.h>
-#include <SD.h>
 
 // Inisialisasi RTC
 RTC_DS3231 rtc;
@@ -13,10 +11,8 @@ RTC_DS3231 rtc;
 #if defined (AVr)
   // Pin untuk sensor dan relay
   const int relayInPump = 22;
-  const int relayOutPump = 23;
   const int relayMixer = 29;
-  const int relayNutrientA = 26;
-  const int relayNutrientB = 27;
+  const int relayNutrient = 26;
   // Pin ultrasonic
   const int trigPin = 24;
   const int echoPin = 25;
@@ -30,26 +26,83 @@ RTC_DS3231 rtc;
   const int tdsSensorPin = A2;
 
 #elif defined (Uno)
+  // Pin untuk sensor dan relay
+  const int relayInPump = 2;
+  const int relayMixer = 4;
+  const int relayNutrient = 5;
+  // Pin ultrasonic
+  const int trigPin = 6;
+  const int echoPin = 7;
+  // Pin Temperatur air
+  const int tempSensorPin = 8;
+  // Pin Water Level
+  const int waterLevelPin = A0;
+  // Pin Ph sensor
+  const int phSensorPin = A1;
+  // Pin Tds
+  const int tdsSensorPin = A2;
+#endif
+
 
 // Inisialisasi sensor suhu
 OneWire oneWire(tempSensorPin);
 DallasTemperature sensors(&oneWire);
 
-// Variabel konfigurasi
-float maxWaterLevel, minWaterLevel, maxTemp, minTemp, maxPH, minPH, maxTDS, minTDS;
+// Nilai Patokan Awal
+/*
+        Case
+
+  Tingi tangki Utama 1 Meter ke 100 cm
+  Maksimal air 80%
+  TDS 400 PPM
+
+*/
+
+// Variabel konfigurasi (NK)
+int vk_tinggitangki = 100; // CM
+int vk_makstinggiair = 100*80/100; //CM
+int vk_mintinggiair = 100*30/100; //CM
+int vk_makstds = 400; // PPM
+
+// Variabel Global
+// Sensor Ultrsonic
+long duration;
+int distance, ketinggian;
+// Sensor TDS
+int tdsValue;
+
+void cek_tinggiair() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2;
+  ketinggian = vk_tinggitangki - distance;
+  Serial.print("Water Level (Ultrasonic): ");
+  Serial.print(ketinggian);
+  Serial.println(" cm");
+}
+void cek_tds() {
+  tdsValue = analogRead(tdsSensorPin);
+  Serial.print("TDS/EC Value: ");
+  Serial.println(tdsValue);
+
+}
+
 
 void setup() {
   Wire.begin();
   rtc.begin();
+
 //sensor temp air
   sensors.begin();
   Serial.begin(9600);
 
   // Inisialisasi pin relay
   pinMode(relayInPump, OUTPUT);
-  pinMode(relayOutPump, OUTPUT);
-  pinMode(relayNutrientA, OUTPUT);
-  pinMode(relayNutrientB, OUTPUT);
+  pinMode(relayNutrient, OUTPUT);
   pinMode(relayMixer, OUTPUT);
 
   // Inisialisasi pin sensor
@@ -61,7 +114,13 @@ void setup() {
 }
 
 void loop() {
-  /*// Membaca waktu dari RTC
+  /*
+        BAGIAN 1 MEMBACA
+
+    Arduino_Control akan membaca data dari semua sensor
+  */
+
+  // Membaca waktu dari RTC
   DateTime now = rtc.now();
   Serial.print("Time: ");
   Serial.print(now.hour());
@@ -70,19 +129,9 @@ void loop() {
   Serial.print(':');
   Serial.print(now.second());
   Serial.println();
-  */
   
   // Membaca sensor ultrasonic
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  long duration = pulseIn(echoPin, HIGH);
-  int distance = duration * 0.034 / 2;
-  Serial.print("Water Level (Ultrasonic): ");
-  Serial.print(distance);
-  Serial.println(" cm");
+  cek_tinggiair();
 
   // Membaca water level sensor
   int waterLevel = analogRead(waterLevelPin);
@@ -95,9 +144,7 @@ void loop() {
   Serial.println(phValue);
 
   // Membaca sensor TDS/EC
-  int tdsValue = analogRead(tdsSensorPin);
-  Serial.print("TDS/EC Value: ");
-  Serial.println(tdsValue);
+  cek_tds();
 
   // Membaca sensor suhu
   sensors.requestTemperatures();
@@ -106,10 +153,16 @@ void loop() {
   Serial.print(temperature);
   Serial.println(" °C");
 
+  /*
+        BAGIAN 2 MENGIRIM dan MENERIMA DATA
+
+    Arduino_Control akan mengirim data ke ESP untuk disimpan sebagai
+    log dan di kirim ke web dan Arduino_Display untuk ditunjukkan kelayar
+  */
+
   // Mengirim data ke NodeMCU ESP8266 (alamat 8)
   Wire.beginTransmission(8);
-  Wire.write(distance); // Mengirim data level air
-  Wire.write(waterLevel); // Mengirim data level air analog
+  Wire.write(ketinggian); // Mengirim data level air
   Wire.write(phValue); // Mengirim data pH
   Wire.write(tdsValue); // Mengirim data TDS/EC
   Wire.write((int)temperature); // Mengirim data suhu
@@ -117,12 +170,46 @@ void loop() {
 
   // Mengirim data ke Arduino UNO (alamat 9)
   Wire.beginTransmission(9);
-  Wire.write(distance); // Mengirim data level air
-  Wire.write(waterLevel); // Mengirim data level air analog
+  Wire.write(ketinggian); // Mengirim data level air
   Wire.write(phValue); // Mengirim data pH
   Wire.write(tdsValue); // Mengirim data TDS/EC
   Wire.write((int)temperature); // Mengirim data suhu
   Wire.endTransmission();
 
   delay(1000); // Update setiap detik
+  
+  /*
+        BAGIAN 3 ACTION
+
+    Arduino_Control akan mengkonfigurasi Tanki utama
+  */
+
+// Mengatur Ketinggian air
+  if(ketinggian > vk_mintinggiair){
+      while(ketinggian < vk_makstinggiair){
+      digitalWrite(relayInPump,HIGH);
+      delay(5000);
+      digitalWrite(relayInPump,LOW);
+
+      digitalWrite(relayMixer,HIGH);
+      delay(5000);
+      digitalWrite(relayMixer,LOW);
+
+      cek_tds();
+  
+      if(tdsvalue < vk_makstds){
+          
+      digitalWrite(relayNutrient,HIGH);
+      delay(5000);
+      digitalWrite(relayNutrient,LOW);
+
+      digitalWrite(relayMixer,HIGH);
+      delay(5000);
+      digitalWrite(relayMixer,LOW);
+
+      cek_tinggiair();
+      
+      }
+    }
+  }
 }
